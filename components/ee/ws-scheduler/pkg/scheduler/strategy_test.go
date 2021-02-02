@@ -16,6 +16,8 @@ import (
 	sched "github.com/gitpod-io/gitpod/ws-scheduler/pkg/scheduler"
 )
 
+const defaultNamespace = "default"
+
 var (
 	testBaseTime       = time.Unix(0, 0)
 	testWorkspaceImage = "gitpod/workspace-full"
@@ -265,7 +267,7 @@ Nodes:
 
 			ramSafetyBuffer := res.MustParse(test.RAMSafetyBuffer)
 			ghostsAreInvisible := wsk8s.IsNonGhostWorkspace(test.ScheduledPod)
-			state := sched.ComputeState(test.Nodes, test.Pods, nil, &ramSafetyBuffer, ghostsAreInvisible)
+			state := sched.ComputeState(test.Nodes, test.Pods, nil, &ramSafetyBuffer, ghostsAreInvisible, defaultNamespace)
 
 			densityAndExperienceConfig := sched.DefaultDensityAndExperienceConfig()
 			strategy, err := sched.CreateStrategy(sched.StrategyDensityAndExperience, sched.Configuration{
@@ -347,6 +349,7 @@ func createPod(name string, ram string, ephemeralStorage string, nodeName string
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              name,
+			Namespace:         defaultNamespace,
 			CreationTimestamp: metav1.NewTime(creationTimestamp),
 			Labels:            labels,
 		},

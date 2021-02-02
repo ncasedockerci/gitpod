@@ -311,7 +311,7 @@ func (s *Scheduler) schedulePod(ctx context.Context, pod *corev1.Pod) (err error
 	var ghostToDelete string
 	if isGhostReplacing {
 		reservedGhosts := s.localSlotCache.getReservedGhostsOnNode(nodeName)
-		ghostToDelete = state.FindOldestGhostOnNodeExcluding(nodeName, reservedGhosts)
+		ghostToDelete = state.FindOldestGhostOnNodeExcluding(nodeName, s.Config.Namespace, reservedGhosts)
 	}
 
 	// mark as already scheduled, even before the actual scheduling has happened.
@@ -425,7 +425,7 @@ func (s *Scheduler) buildState(ctx context.Context, pod *corev1.Pod, makeGhostsI
 		return nil, xerrors.Errorf("cannot list all pods: %w", podsErr)
 	}
 
-	state = ComputeState(potentialNodes, allPods, s.localSlotCache.getListOfBindings(), &s.RAMSafetyBuffer, makeGhostsInvisible)
+	state = ComputeState(potentialNodes, allPods, s.localSlotCache.getListOfBindings(), &s.RAMSafetyBuffer, makeGhostsInvisible, s.Config.Namespace)
 
 	// The required node services is basically PodAffinity light. They limit the nodes we can schedule
 	// workspace pods to based on other pods running on that node. We do this because we require that

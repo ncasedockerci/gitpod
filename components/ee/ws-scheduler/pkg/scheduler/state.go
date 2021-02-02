@@ -88,7 +88,13 @@ func (r *ResourceUsage) updateAvailable() {
 }
 
 // ComputeState builds a new state based on the current world view
-func ComputeState(nodes []*corev1.Node, pods []*corev1.Pod, bindings []*Binding, ramSafetyBuffer *res.Quantity, ghostsAreInvisible bool) *State {
+// It takes into account:
+//  - the current nodes
+//  - _all_ pods
+//  - all Bindings that we are aware of (because we created them) but (our view of) the Kubernetes plane might not reflect them, yet (potentially doubling the info in nodes/pods)
+//  - a certain safety buffer we introduced to capture calculation differences between kubelet and ws-scheduler
+// Also, this function can ignore Ghost workspaces from a certain namespace. Those workspaces are listed in node.ghosts, but not node.pods - and thus not part of the calculation.
+func ComputeState(nodes []*corev1.Node, pods []*corev1.Pod, bindings []*Binding, ramSafetyBuffer *res.Quantity, ghostsAreInvisible bool, ghostNamespace string) *State {
 	type podAndNode struct {
 		pod      *corev1.Pod
 		nodeName string
@@ -151,7 +157,7 @@ func ComputeState(nodes []*corev1.Node, pods []*corev1.Pod, bindings []*Binding,
 		}
 		if wsk8s.IsGhostWorkspace(podAndNode.pod) {
 			ntp.ghosts[podName] = struct{}{}
-			if !ghostsAreInvisible {
+			if !(ghostsAreInvisible && podAndNode.pod.Namespace == ghostNamespace) {
 				ntp.pods[podName] = struct{}{}
 			}
 		} else {
@@ -284,7 +290,7 @@ func (s *State) SortNodesByAvailableRAM(order SortOrder) []*Node {
 
 // FindOldestGhostOnNodeExcluding returns the name of the oldest ghost on the node with the given node, or "" if there is no
 // node or ghost
-func (s *State) FindOldestGhostOnNodeExcluding(nodeName string, reservedGhosts map[string]bool) string {
+func (s *State) FindOldestGhostOnNodeExcluding(nodeName string, namespace string, reservedGhosts map[string]bool) string {
 	node, ok := s.Nodes[nodeName]
 	if !ok {
 		return ""
@@ -295,6 +301,9 @@ func (s *State) FindOldestGhostOnNodeExcluding(nodeName string, reservedGhosts m
 
 	ghosts := make([]*corev1.Pod, 0, len(node.Ghosts))
 	for _, g := range node.Ghosts {
+		if g.Namespace != namespace {
+			continue
+		}
 		if isReserved, _ := reservedGhosts[g.Name]; isReserved {
 			continue
 		}
