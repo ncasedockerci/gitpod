@@ -78,6 +78,7 @@ func (m *metrics) Register(reg prometheus.Registerer) error {
 		newTimeoutSettingsVec(m.manager),
 		m.totalStartsCounterVec,
 		m.totalStopsCounterVec,
+		newSubscriberQueueLevelVec(m.manager),
 	}
 	for _, c := range collectors {
 		err := reg.Register(c)
@@ -354,6 +355,48 @@ func (vec *timeoutSettingsVec) Collect(ch chan<- prometheus.Metric) {
 		metric, err := prometheus.NewConstMetric(vec.desc, prometheus.GaugeValue, float64(cnt), phase)
 		if err != nil {
 			log.WithError(err).Warnf("cannot create workspace metric - %s will be inaccurate", vec.name)
+			continue
+		}
+
+		ch <- metric
+	}
+}
+
+func newSubscriberQueueLevelVec(m *Manager) *subscriberQueueLevelVec {
+	name := prometheus.BuildFQName(metricsNamespace, metricsWorkspaceSubsystem, "subscriber_queue_level")
+	return &subscriberQueueLevelVec{
+		Name: name,
+		Desc: prometheus.NewDesc(
+			name,
+			"Current fill level of the subscriber queue",
+			[]string{"client"},
+			prometheus.Labels(map[string]string{}),
+		),
+		M: m,
+	}
+}
+
+type subscriberQueueLevelVec struct {
+	Name string
+	Desc *prometheus.Desc
+	M    *Manager
+}
+
+// Describe implements Collector. It will send exactly one Desc to the provided channel.
+func (vec *subscriberQueueLevelVec) Describe(ch chan<- *prometheus.Desc) {
+	ch <- vec.Desc
+}
+
+// Collect implements Collector.
+func (vec *subscriberQueueLevelVec) Collect(ch chan<- prometheus.Metric) {
+	vec.M.subscriberLock.RLock()
+	defer vec.M.subscriberLock.RUnlock()
+
+	for client, queue := range vec.M.subscribers {
+		// metrics cannot be re-used, we have to create them every single time
+		metric, err := prometheus.NewConstMetric(vec.Desc, prometheus.GaugeValue, float64(len(queue)), client)
+		if err != nil {
+			log.WithError(err).Warnf("cannot create subscriber queue level metric - %s will be inaccurate", vec.Name)
 			continue
 		}
 
